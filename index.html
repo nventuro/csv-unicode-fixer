@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CSV Unicode Fixer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --chrome: #e8ebee;
+    --panel: #ffffff;
+    --rail: #f4f6f7;
+    --rail-hover: #eaeef0;
+    --ink: #14171a;
+    --muted: #5f666d;
+    --faint: #6a7178;
+    --disabled: #b8bfc5;
+    --on-accent: #ffffff;
+    --line: #d5dade;
+    --hair: #eef1f4;
+    --accent: oklch(0.50 0.14 240);
+    --removed-bg: oklch(0.93 0.05 25);
+    --removed-ink: oklch(0.45 0.19 25);
+    --added: oklch(0.42 0.10 155);
+    --warn: oklch(0.50 0.15 45);
+    --fs-xs: 11px;
+    --fs-sm: 12.5px;
+    --fs-md: 14px;
+    --fs-lg: 20px;
+    /* The only place the change table's shape is written down. */
+    --grid-cols: 64px 180px minmax(0, 1fr) minmax(0, 1fr);
+    --sans: "Space Grotesk", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--chrome); color: var(--ink);
+    font-family: var(--sans); font-size: var(--fs-md); -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; flex-direction: column; height: 100%; }
+
+  .topbar {
+    display: flex; align-items: center; gap: 16px; padding: 0 20px; min-height: 52px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  .wordmark { font-family: var(--mono); font-size: var(--fs-md); font-weight: 700; letter-spacing: -0.02em; }
+  .divider { width: 1px; height: 20px; background: var(--line); }
+  .filemeta { display: flex; align-items: center; gap: 9px; flex: 1 1 320px; min-width: 0; flex-wrap: wrap; }
+  .filename { font-family: var(--mono); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dim { font-size: var(--fs-sm); color: var(--muted); }
+  .linkish {
+    font-size: var(--fs-sm); color: var(--accent); background: none; border: 0; padding: 0;
+    font-family: var(--sans); cursor: pointer; text-decoration: underline;
+  }
+
+  .body { display: flex; flex: 1; min-height: 0; }
+
+  .rail {
+    width: 318px; flex-shrink: 0; background: var(--rail); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; overflow-y: auto;
+  }
+  .railhead {
+    padding: 15px 18px 10px; font-size: var(--fs-xs); font-weight: 600;
+    letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted);
+  }
+  .fix { display: flex; align-items: flex-start; gap: 11px; padding: 9px 18px; cursor: pointer; border-left: 2px solid transparent; }
+  .fix:hover { background: var(--rail-hover); }
+  .fix input { margin: 2px 0 0; width: 15px; height: 15px; accent-color: var(--accent); flex-shrink: 0; cursor: pointer; }
+  .fix .text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+  .fix .name { font-size: var(--fs-sm); font-weight: 500; }
+  .fix .detail { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); }
+  .fix .detail.warn { color: var(--warn); }
+  .fix .count { font-family: var(--mono); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; color: var(--ink); }
+  .fix.empty .name, .fix.empty .count { color: var(--faint); }
+
+  .railfoot {
+    margin-top: auto; padding: 16px 18px; border-top: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 10px; position: sticky; bottom: 0; background: var(--rail);
+  }
+  .bomrow { display: flex; align-items: center; gap: 9px; font-size: var(--fs-sm); color: var(--ink); cursor: pointer; }
+  .bomrow input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+  .download {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--accent); color: var(--on-accent); border: 0; border-radius: 7px; padding: 12px;
+    font-family: var(--sans); font-size: var(--fs-md); font-weight: 500; cursor: pointer;
+  }
+  .download:hover { filter: brightness(1.08); }
+  .download:disabled { background: var(--disabled); cursor: not-allowed; }
+
+  .main { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+  .mainhead { display: flex; align-items: center; gap: 10px; padding: 13px 20px; border-bottom: 1px solid var(--hair); flex-wrap: wrap; }
+  .total { font-size: var(--fs-md); font-weight: 600; }
+  .chips { display: flex; align-items: center; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+  .chip {
+    font-family: var(--mono); font-size: var(--fs-xs); background: var(--hair); color: var(--ink);
+    border: 0; border-radius: 20px; padding: 4px 11px; cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+
+  .grid { display: grid; grid-template-columns: var(--grid-cols); }
+  .colhead {
+    padding: 8px 20px; background: var(--rail); border-bottom: 1px solid var(--hair);
+    font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+  }
+  .rows { overflow-y: auto; flex: 1; font-family: var(--mono); font-size: var(--fs-sm); }
+  .rows .cell { padding: 9px 0; border-bottom: 1px solid var(--hair); overflow-wrap: anywhere; }
+  .rows .cell:first-child { padding-left: 20px; color: var(--faint); }
+  .cell.col { color: var(--muted); padding-right: 12px; }
+  .cell.before { padding-right: 14px; }
+  .rows .cell.after { padding-right: 20px; color: var(--added); }
+  mark { background: var(--removed-bg); color: var(--removed-ink); border-radius: 3px; padding: 1px 3px; font-weight: 500; }
+  .tablefoot { padding: 12px 20px; font-size: var(--fs-sm); color: var(--muted); }
+
+  .drop {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 40px 20px; text-align: center;
+  }
+  .dropzone {
+    border: 2px dashed var(--line); border-radius: 12px; background: var(--panel);
+    padding: 48px 40px; display: flex; flex-direction: column; align-items: center; gap: 12px;
+    max-width: 520px; width: 100%; cursor: pointer;
+  }
+  .dropzone.over { border-color: var(--accent); background: color-mix(in oklch, var(--accent) 7%, var(--panel)); }
+  .dropzone h1 { font-size: var(--fs-lg); font-weight: 600; margin: 0; }
+  .dropzone p { margin: 0; font-size: var(--fs-md); color: var(--muted); max-width: 380px; line-height: 1.5; }
+  .pick {
+    background: var(--accent); color: var(--on-accent); border: 0; border-radius: 7px; padding: 10px 18px;
+    font-family: var(--sans); font-size: var(--fs-md); font-weight: 500; cursor: pointer; margin-top: 4px;
+  }
+  .hidden { display: none !important; }
+
+  @media (max-width: 820px) {
+    :root { --grid-cols: 52px 110px minmax(0, 1fr); }
+    .body { flex-direction: column; }
+    .rail { width: 100%; border-right: 0; border-bottom: 1px solid var(--line); }
+    .railfoot { position: static; }
+    .after { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="topbar">
+    <div class="wordmark">csv-unicode-fixer</div>
+    <div class="divider"></div>
+    <div class="filemeta">
+      <span id="filename" class="filename dim">No file loaded</span>
+      <span id="fileshape" class="dim"></span>
+      <button id="replace" class="linkish hidden" type="button">Replace</button>
+    </div>
+    <span class="dim">Nothing leaves your browser</span>
+  </div>
+
+  <div id="empty" class="drop">
+    <div id="dropzone" class="dropzone">
+      <h1>Drop a CSV here</h1>
+      <p>It is read and repaired in this page. The file is never uploaded anywhere.</p>
+      <button class="pick" type="button">Choose a file</button>
+    </div>
+  </div>
+
+  <div id="loaded" class="body hidden">
+    <div class="rail">
+      <div class="railhead">Fixes</div>
+      <div id="fixlist"></div>
+      <div class="railfoot">
+        <label class="bomrow"><input id="bom" type="checkbox" checked> Add BOM for Excel</label>
+        <button id="download" class="download" type="button">Download fixed CSV</button>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="mainhead">
+        <span id="total" class="total"></span>
+        <span id="scope" class="dim"></span>
+        <div id="chips" class="chips"></div>
+      </div>
+      <div class="grid">
+        <div class="colhead">Row</div>
+        <div class="colhead">Column</div>
+        <div class="colhead">Before</div>
+        <div class="colhead after">After</div>
+      </div>
+      <div id="rows" class="rows"><div class="grid" id="rowgrid"></div></div>
+      <div id="tablefoot" class="tablefoot"></div>
+    </div>
+  </div>
+</div>
+
+<input id="file" type="file" accept=".csv,text/csv,text/plain" class="hidden">
+
+<script type="module">
+import { FIXES, defaultFixes, withBom, processCsv } from './csv-fixer.js';
+
+const MAX_RENDERED = 300;
+const LABELS = { '\u00a0': '\u00b7', '\u00ad': '\u00ac', '\r': 'CR', '\n': 'LF' };
+const VISIBLE_SPECIALS = /[\u2018\u2019\u201c\u201d\u2013\u2014]/;
+
+const el = (id) => document.getElementById(id);
+const state = { name: '', size: 0, text: '', fixes: defaultFixes(), filter: 'all', result: null };
+
+function escapeHtml(value) {
+  return value.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+}
+
+// Invisible characters are the whole problem, so the "before" column shows them
+// as marks rather than leaving the reader to guess where the change is.
+function renderBefore(value) {
+  const head = value.length - value.replace(/^[ \t]+/, '').length;
+  const tail = value.length - value.replace(/[ \t]+$/, '').length;
+  let html = '';
+  let index = 0;
+  for (const char of value) {
+    const atEdge = index < head || index >= value.length - tail;
+    const label = LABELS[char];
+    if (label !== undefined) html += `<mark>${label}</mark>`;
+    else if (VISIBLE_SPECIALS.test(char)) html += `<mark>${escapeHtml(char)}</mark>`;
+    else if (atEdge && (char === ' ' || char === '\t')) html += `<mark>${char === ' ' ? '·' : 'TAB'}</mark>`;
+    else html += escapeHtml(char);
+    index += char.length;
+  }
+  return html;
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const number = (value) => value.toLocaleString('en-US');
+
+function renderFixList() {
+  el('fixlist').innerHTML = FIXES.map((fix) => {
+    const counts = state.result ? state.result.counts[fix.id] : { found: 0 };
+    const checked = state.fixes[fix.id] ? ' checked' : '';
+    return `
+      <label class="fix${counts.found === 0 ? ' empty' : ''}">
+        <input type="checkbox" data-fix="${fix.id}"${checked}>
+        <span class="text">
+          <span class="name">${escapeHtml(fix.label)}</span>
+          <span class="detail${fix.lossy ? ' warn' : ''}">${escapeHtml(fix.lossy ? 'lossy · ' + fix.detail : fix.detail)}</span>
+        </span>
+        <span class="count">${number(counts.found)}</span>
+      </label>`;
+  }).join('');
+}
+
+function renderChips() {
+  const active = FIXES.filter((fix) => state.result.counts[fix.id].applied > 0);
+  const chips = [{ id: 'all', label: 'all' }, ...active.map((fix) => ({ id: fix.id, label: fix.label.toLowerCase() }))];
+  if (!chips.some((chip) => chip.id === state.filter)) state.filter = 'all';
+  el('chips').innerHTML = chips.map((chip) =>
+    `<button class="chip" type="button" data-filter="${chip.id}" aria-pressed="${chip.id === state.filter}">${escapeHtml(chip.label)}</button>`
+  ).join('');
+}
+
+function renderRows() {
+  const { changes, changesTruncated, totalChanges } = state.result;
+  const shown = state.filter === 'all' ? changes : changes.filter((c) => c.fixes.includes(state.filter));
+  const slice = shown.slice(0, MAX_RENDERED);
+
+  el('rowgrid').innerHTML = slice.map((change) => `
+    <div class="cell">${change.row}</div>
+    <div class="cell col">${escapeHtml(change.column)}</div>
+    <div class="cell before">${renderBefore(change.before)}</div>
+    <div class="cell after">${escapeHtml(change.after)}</div>`).join('');
+
+  const parts = [];
+  if (shown.length === 0) parts.push('No changes to show');
+  else parts.push(`Showing ${number(slice.length)} of ${number(shown.length)}`);
+  if (state.filter !== 'all') parts.push(`filtered from ${number(changes.length)}`);
+  if (changesTruncated) parts.push(`only the first ${number(changes.length)} of ${number(totalChanges)} changes are listed`);
+  el('tablefoot').textContent = parts.join(' · ');
+}
+
+function render() {
+  const { result } = state;
+  el('filename').textContent = state.name;
+  el('filename').classList.remove('dim');
+  el('fileshape').textContent =
+    `${formatBytes(state.size)} · ${number(result.rowCount)} rows · ${number(result.columnCount)} cols`;
+  el('replace').classList.remove('hidden');
+  el('total').textContent = `${number(result.totalChanges)} change${result.totalChanges === 1 ? '' : 's'}`;
+  el('scope').textContent = `in ${number(result.rowsChanged)} of ${number(result.rowCount)} rows`;
+  el('download').disabled = false;
+  renderFixList();
+  renderChips();
+  renderRows();
+}
+
+function recompute() {
+  el('total').textContent = 'Scanning…';
+  el('scope').textContent = '';
+  el('download').disabled = true;
+  setTimeout(() => {
+    state.result = processCsv(state.text, { fixes: state.fixes });
+    render();
+  }, 0);
+}
+
+function load(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.name = file.name;
+    state.size = file.size;
+    state.text = String(reader.result);
+    el('empty').classList.add('hidden');
+    el('loaded').classList.remove('hidden');
+    recompute();
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+el('file').addEventListener('change', (event) => {
+  const [file] = event.target.files;
+  if (file) load(file);
+  event.target.value = '';
+});
+
+el('dropzone').addEventListener('click', () => el('file').click());
+el('replace').addEventListener('click', () => el('file').click());
+
+for (const [type, handler] of [
+  ['dragover', (event) => { event.preventDefault(); el('dropzone').classList.add('over'); }],
+  ['dragleave', () => el('dropzone').classList.remove('over')],
+  ['drop', (event) => {
+    event.preventDefault();
+    el('dropzone').classList.remove('over');
+    const [file] = event.dataTransfer.files;
+    if (file) load(file);
+  }],
+]) {
+  el('dropzone').addEventListener(type, handler);
+}
+document.addEventListener('dragover', (event) => event.preventDefault());
+document.addEventListener('drop', (event) => event.preventDefault());
+
+el('fixlist').addEventListener('change', (event) => {
+  const id = event.target.dataset.fix;
+  if (!id) return;
+  state.fixes[id] = event.target.checked;
+  recompute();
+});
+
+el('chips').addEventListener('click', (event) => {
+  const filter = event.target.dataset.filter;
+  if (!filter) return;
+  state.filter = filter;
+  renderChips();
+  renderRows();
+});
+
+el('download').addEventListener('click', () => {
+  const text = el('bom').checked ? withBom(state.result.output) : state.result.output;
+  const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = state.name.replace(/(\.csv)?$/i, '') + '-fixed.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+});
+
+renderFixList();
+</script>
+</body>
+</html>
